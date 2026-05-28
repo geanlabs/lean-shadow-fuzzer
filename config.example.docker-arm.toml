@@ -4,7 +4,7 @@
 
 [fuzzer]
 max_runs = 200                                                              # Total number of simulation runs in the sweep.
-duration_secs = { min = 120, max = 120 }                                   # Duration of a single Shadow simulation in seconds (range or scalar).
+duration_secs = { min = 360, max = 360 }                                   # Duration of a single Shadow simulation in seconds (range or scalar).
 seed = 42                                                                  # Base seed — per-run seed is `seed + run_index` for reproducibility.
 output_dir = "fuzzer-output"                                               # Directory where per-run output folders are placed.
 runner = "docker-arm"                                                           # Shadow runner: "local" (host shadow binary) or "docker-arm".

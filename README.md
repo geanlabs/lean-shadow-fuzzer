@@ -11,7 +11,7 @@ Reads a template config.toml with optional `{min, max}` range values, generates 
 uv sync
 
 # Copy and edit the example config
-cp config.example.toml config.toml
+cp config.example.docker-arm.toml config.toml
 
 # Run a dry-run to see what would happen
 uv run shadow-fuzzer.py --dry-run config.toml
@@ -37,6 +37,19 @@ uv run shadow-fuzzer.py --serve config.toml
 
 Open `http://127.0.0.1:8000` in your browser.
 
+## Cleanup
+
+You can clean up previous fuzzer outputs and the dashboard database using the following flags:
+
+```bash
+# Start the sweep with a fresh dashboard database (removes existing runs.db)
+uv run shadow-fuzzer.py --serve --clean-db config.toml
+
+# Start the sweep with a completely fresh output directory
+# (removes runs.db and all previous run folders, but keeps key cache)
+uv run shadow-fuzzer.py --clean-output config.toml
+```
+
 ## Project Structure
 
 ```
@@ -49,10 +62,11 @@ Open `http://127.0.0.1:8000` in your browser.
 ├── web/                   # Dashboard frontend (React + Vite)
 ├── tests/                 # Test suite
 ├── shadow-fuzzer.py       # Main entry point
-├── generate-shadow-topology.py
-├── stats-shadow.py
-├── dashboard_server.py    # FastAPI dashboard backend
-└── config.example.toml    # Example configuration
+├── shadow_fuzzer/         # Package directory containing:
+│   ├── generate_shadow_topology.py
+│   ├── stats_shadow.py
+│   └── dashboard_server.py (FastAPI dashboard backend, etc.)
+└── config.example.docker-arm.toml # Example configuration
 ```
 
 ## Requirements

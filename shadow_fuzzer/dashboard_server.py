@@ -16,9 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from dashboard_db import DashboardDB, utc_now
+from .dashboard_db import DashboardDB, utc_now
 
-FUZZER_ROOT = Path(__file__).resolve().parent
+FUZZER_ROOT = Path(__file__).resolve().parent.parent
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 

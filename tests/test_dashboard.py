@@ -14,10 +14,10 @@ from pathlib import Path
 FUZZER_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FUZZER_ROOT))
 
-from dashboard_db import DashboardDB
-from dashboard_events import events_from_run
-from dashboard_server import create_app
-from dashboard_time import chain_slot_from_simulated_seconds, max_chain_slot_for_duration
+from shadow_fuzzer.dashboard_db import DashboardDB
+from shadow_fuzzer.dashboard_events import events_from_run
+from shadow_fuzzer.dashboard_server import create_app
+from shadow_fuzzer.dashboard_time import chain_slot_from_simulated_seconds, max_chain_slot_for_duration
 
 FUZZER_SCRIPT = FUZZER_ROOT / "shadow-fuzzer.py"
 _FUZZER_SPEC = importlib.util.spec_from_file_location("shadow_fuzzer_script", FUZZER_SCRIPT)

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 FUZZER_ROOT = Path(__file__).resolve().parent
-STATS_SHADOW_PATH = FUZZER_ROOT / "stats-shadow.py"
+STATS_SHADOW_PATH = FUZZER_ROOT / "stats_shadow.py"
 
 
 def _load_stats_shadow() -> Any:

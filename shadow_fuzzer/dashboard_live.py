@@ -6,8 +6,8 @@ import threading
 import time
 from pathlib import Path
 
-from dashboard_db import DashboardDB
-from dashboard_events import events_from_run, max_simulated_seconds_from_run, stats_from_run
+from .dashboard_db import DashboardDB
+from .dashboard_events import events_from_run, max_simulated_seconds_from_run, stats_from_run
 
 
 class RunLogWatcher:

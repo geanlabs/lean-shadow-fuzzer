@@ -62,18 +62,19 @@ shadow-fuzzer.py          # main entry point — config parsing, run orchestrati
 ├── _ensure_docker_image()#   build composite Docker image (docker-arm runner)
 ├── _execute_runs()       #   per-run loop:
 │   ├── _run_genesis()           #   copy genesis template, run generate-genesis.sh
-│   ├── _run_topology()          #   run generate-shadow-topology.py
+│   ├── _run_topology()          #   run generate_shadow_topology.py
 │   ├── _run_shadow_yaml()       #   run generate-shadow-yaml.sh
 │   ├── _run_shadow()            #   invoke shadow simulator (local or docker)
-│   └── _run_stats()             #   parse shadow output via stats-shadow.py
-├── generate-shadow-topology.py  # GML topology + bandwidths/regions JSON
-├── stats-shadow.py              # parse shadow output → stats.json
+│   └── _run_stats()             #   parse shadow output via stats_shadow.py
 │
-├── dashboard_server.py   # FastAPI + WebSocket dashboard backend
-├── dashboard_db.py       # SQLite store for runs, events, snapshots
-├── dashboard_events.py   # wraps stats-shadow.py; normalizes events
-├── dashboard_live.py     # live log watcher for dashboard updates
-├── dashboard_time.py     # chain slot ↔ simulated seconds conversion
+├── shadow_fuzzer/        # package containing fuzzer modules and tools
+│   ├── generate_shadow_topology.py  # GML topology + bandwidths/regions JSON
+│   ├── stats_shadow.py              # parse shadow output → stats.json
+│   ├── dashboard_server.py   # FastAPI + WebSocket dashboard backend
+│   ├── dashboard_db.py       # SQLite store for runs, events, snapshots
+│   ├── dashboard_events.py   # wraps stats_shadow.py; normalizes events
+│   ├── dashboard_live.py     # live log watcher for dashboard updates
+│   └── dashboard_time.py     # chain slot ↔ simulated seconds conversion
 │
 ├── scripts/              # bundled shell scripts
 │   ├── generate-genesis.sh
@@ -88,7 +89,7 @@ shadow-fuzzer.py          # main entry point — config parsing, run orchestrati
 ### Config
 
 Two example configs:
-- `config.example.toml` — docker-arm runner with Docker image references
+- `config.example.docker-arm.toml` — docker-arm runner with Docker image references
 - `config.example.local.toml` — local runner using host binaries on PATH
 
 Key config sections: `[fuzzer]`, `[simulation]`, `[clients]`, `[network]`, `[network.regions]`, `[network.bandwidths]`.

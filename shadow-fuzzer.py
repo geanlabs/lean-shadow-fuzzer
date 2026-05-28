@@ -7,7 +7,7 @@ simulations either locally or inside a Docker ARM container.
 
 Usage:
   uv run shadow-fuzzer.py [config.toml]
-  uv run shadow-fuzzer.py --dry-run config.example.toml
+  uv run shadow-fuzzer.py --dry-run config.example.docker-arm.toml
   uv run shadow-fuzzer.py --serve --host 127.0.0.1 --port 8000 config.toml
   uv run shadow-fuzzer.py --serve --clean-db config.toml
   uv run shadow-fuzzer.py --serve --clean-output config.toml
@@ -516,7 +516,7 @@ def _run_topology(run_dir: Path, resolved: dict[str, Any]) -> None:
     seed = resolved["fuzzer"]["seed"]
     total_nodes = resolved["simulation"]["total_nodes"]
 
-    script = FUZZER_ROOT / "generate-shadow-topology.py"
+    script = FUZZER_ROOT / "shadow_fuzzer" / "generate_shadow_topology.py"
     cmd: list[str] = [
         sys.executable,
         str(script),
@@ -620,7 +620,7 @@ def _run_shadow(run_dir: Path, resolved: dict[str, Any], dry_run: bool = False) 
 
 def _run_stats(run_dir: Path, metadata_path: Path) -> None:
     run_dir = run_dir.resolve()
-    script = FUZZER_ROOT / "stats-shadow.py"
+    script = FUZZER_ROOT / "shadow_fuzzer" / "stats_shadow.py"
     subprocess.run(
         [sys.executable, str(script), str(run_dir), "--metadata-json", str(metadata_path)],
         check=True,
@@ -635,7 +635,7 @@ def _write_stats_snapshot(
     status: str | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
-    from dashboard_events import stats_from_run
+    from shadow_fuzzer.dashboard_events import stats_from_run
 
     stats = stats_from_run(run_dir, metadata)
     warnings = list(dict.fromkeys([
@@ -737,7 +737,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "config",
         nargs="?",
-        default="config.example.toml",
+        default="config.example.docker-arm.toml",
         help="Path to the fuzzer TOML config",
     )
     parser.add_argument(
@@ -836,8 +836,8 @@ def main() -> None:
     fresh_dashboard = args.clean_db or args.clean_output
     if args.serve:
         try:
-            from dashboard_db import DashboardDB
-            from dashboard_server import start_server_background
+            from shadow_fuzzer.dashboard_db import DashboardDB
+            from shadow_fuzzer.dashboard_server import start_server_background
 
             dashboard_db = DashboardDB(output_dir / "runs.db")
             if not fresh_dashboard:
@@ -945,7 +945,7 @@ def main() -> None:
             print("  Generating topology...")
             _run_topology(run_dir, {**resolved, "_internal": internal})
             if dashboard_db:
-                from dashboard_events import stats_from_run
+                from shadow_fuzzer.dashboard_events import stats_from_run
 
                 dashboard_db.update_stats_snapshot(
                     run_id,
@@ -961,7 +961,7 @@ def main() -> None:
             watcher = None
             shadow_error = None
             if dashboard_db and not dry_run:
-                from dashboard_live import RunLogWatcher
+                from shadow_fuzzer.dashboard_live import RunLogWatcher
 
                 watcher = RunLogWatcher(
                     dashboard_db,
@@ -1011,7 +1011,7 @@ def main() -> None:
             all_warnings = [*warnings, *stats.get("warnings", [])]
             final_status = "error" if shadow_error else ("warning" if all_warnings else "complete")
             if dashboard_db:
-                from dashboard_events import events_from_run
+                from shadow_fuzzer.dashboard_events import events_from_run
 
                 dashboard_db.insert_events(run_id, events_from_run(run_dir))
                 dashboard_db.finish_run(

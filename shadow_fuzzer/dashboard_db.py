@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from dashboard_events import event_key, events_from_run
-from dashboard_time import chain_slot_from_simulated_seconds
+from .dashboard_events import event_key, events_from_run
+from .dashboard_time import chain_slot_from_simulated_seconds
 
 
 TERMINAL_STATUSES = {"complete", "warning", "error"}

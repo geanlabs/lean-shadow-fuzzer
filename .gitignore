@@ -1,0 +1,25 @@
+fuzzer-output/
+__pycache__/
+*.pyc
+uv.lock
+.DS_Store
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Generated genesis files (created by generate-genesis.sh)
+config.yaml
+validators.yaml
+nodes.yaml
+genesis.json
+genesis.ssz
+annotated_validators.yaml
+*.key
+
+# Hash-sig validator keys (contains sensitive secret keys)
+hash-sig-keys/
+
+# Shadow simulation output
+shadow.yaml
+shadow.data/

@@ -7,7 +7,6 @@ internal event names into the public dashboard event taxonomy.
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import contextlib
 import io
 import json
@@ -15,20 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-FUZZER_ROOT = Path(__file__).resolve().parent
-STATS_SHADOW_PATH = FUZZER_ROOT / "stats_shadow.py"
-
-
-def _load_stats_shadow() -> Any:
-    spec = importlib.util.spec_from_file_location("stats_shadow", STATS_SHADOW_PATH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"failed to load {STATS_SHADOW_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_STATS_SHADOW = _load_stats_shadow()
+from . import stats_shadow as _STATS_SHADOW
 
 
 KIND_MAP = {

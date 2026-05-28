@@ -5,9 +5,8 @@ Reads shadow.data host stdout/stderr logs, plus regions.json, bandwidths.json,
 and run-metadata.json (passed via --metadata-json), then writes a single stats.json
 with the resolved run configuration embedded.
 
-Handles both:
-  - qlean LEAN-INTEROP-TEST structured events
-  - zeam text-pattern gossip log lines (best-effort fallback)
+Client-specific log parsing is delegated to ClientParser implementations
+registered in shadow_fuzzer.clients.
 
 Usage:
   python3 stats-shadow.py <run_dir> --metadata-json <path>
@@ -21,12 +20,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from .clients import all_parsers, get_parser_for_host
+
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 SHADOW_TS_RE = re.compile(
     r"\d+\.\d+\.\d+\s+(\d+):(\d+):(\d+)\.(\d+)"
-)
-ZEAM_TS_RE = re.compile(
-    r"[A-Z][a-z]{2}-\d{2}\s+(\d+):(\d+):(\d+)\.(\d+)"
 )
 SHADOW_EPOCH_MS = 946684800000
 
@@ -37,10 +35,6 @@ def parse_shadow_timestamp(line: str) -> float:
     if m:
         h, mi, s, us = m.groups()
         return int(h) * 3600 + int(mi) * 60 + int(s) + int(us) / 1_000_000
-    m = ZEAM_TS_RE.search(line)
-    if m:
-        h, mi, s, ms = m.groups()
-        return int(h) * 3600 + int(mi) * 60 + int(s) + int(ms) / 1_000
     return 0.0
 
 
@@ -66,146 +60,6 @@ def _median(values: list[float]) -> float | None:
         return None
     s = sorted(values)
     return s[len(s) // 2]
-
-
-def _parse_interop_attestation(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r'\["LEAN-INTEROP-TEST",\s*(\d+),\s*"RECEIVE-ATTESTATION",\s*\[(\d+),\s*\[([^\]]+)\]',
-        line,
-    )
-    if not m:
-        return None
-    ts_ms = int(m.group(1))
-    validator_id = int(m.group(2))
-    inner = m.group(3).strip()
-    parts = [p.strip().strip('"') for p in inner.split(",")]
-    if len(parts) < 5:
-        return None
-    return {
-        "ts_ms": ts_ms,
-        "validator_id": validator_id,
-        "source_slot": int(parts[0]),
-        "target_slot": int(parts[1]),
-        "head_slot": int(parts[2]),
-        "slot": int(parts[3]),
-        "block_hash": parts[4],
-        "source": "qlean_structured",
-    }
-
-
-def _parse_interop_publish_block(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r'\["LEAN-INTEROP-TEST",\s*(\d+),\s*"PUBLISH-BLOCK",\s*(\{.+\})\]', line
-    )
-    if not m:
-        return None
-    ts_ms = int(m.group(1))
-    payload = m.group(2)
-    slot_m = re.search(r'"slot":\s*(\d+)', payload)
-    hash_m = re.search(r'"hash":\s*"([0-9a-f]+)"', payload)
-    proposer_m = re.search(r'"proposer":\s*(\d+)', payload)
-    if not slot_m:
-        return None
-    return {
-        "ts_ms": ts_ms,
-        "slot": int(slot_m.group(1)),
-        "block_hash": hash_m.group(1) if hash_m else "",
-        "proposer": int(proposer_m.group(1)) if proposer_m else 0,
-        "source": "qlean_structured",
-    }
-
-
-def _parse_interop_publish_attestation(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r'\["LEAN-INTEROP-TEST",\s*(\d+),\s*"PUBLISH-ATTESTATION",\s*\[(\d+),\s*\[([^\]]+)\]',
-        line,
-    )
-    if not m:
-        return None
-    ts_ms = int(m.group(1))
-    validator_id = int(m.group(2))
-    inner = m.group(3).strip()
-    parts = [p.strip().strip('"') for p in inner.split(",")]
-    if len(parts) < 4:
-        return None
-    return {
-        "ts_ms": ts_ms,
-        "validator_id": validator_id,
-        "slot": int(parts[3]),
-        "source": "qlean_structured",
-    }
-
-
-def _parse_zeam_receive_attestation(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r"received gossip attestation for slot=(\d+)\s+validator=(\d+)", line
-    )
-    if not m:
-        return None
-    return {
-        "ts": parse_shadow_timestamp(line),
-        "slot": int(m.group(1)),
-        "validator_id": int(m.group(2)),
-        "source": "zeam_text",
-    }
-
-
-def _parse_qlean_receive_block(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r"Received block 0x([0-9a-fA-F]+)\s+@\s+(\d+)\s+parent=0x([0-9a-fA-F]+)",
-        line,
-    )
-    if not m:
-        return None
-    return {
-        "ts": parse_shadow_timestamp(line),
-        "slot": int(m.group(2)),
-        "block_hash": m.group(1).lower(),
-        "parent": m.group(3).lower(),
-        "source": "qlean_text",
-    }
-
-
-def _parse_zeam_receive_block(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r"received gossip block for slot=(\d+)\s+.*?proposer=(\d+)", line
-    )
-    if not m:
-        return None
-    return {
-        "ts": parse_shadow_timestamp(line),
-        "slot": int(m.group(1)),
-        "proposer": int(m.group(2)),
-        "source": "zeam_text",
-    }
-
-
-def _parse_zeam_publish_block(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r"published block to network:\s+slot=(\d+)\s+proposer=(\d+)", line
-    )
-    if not m:
-        return None
-    return {
-        "ts": parse_shadow_timestamp(line),
-        "slot": int(m.group(1)),
-        "proposer": int(m.group(2)),
-        "source": "zeam_text",
-    }
-
-
-def _parse_zeam_publish_attestation(line: str) -> dict[str, Any] | None:
-    m = re.search(
-        r"published attestation to network:\s+slot=(\d+)\s+validator=(\d+)", line
-    )
-    if not m:
-        return None
-    return {
-        "ts": parse_shadow_timestamp(line),
-        "slot": int(m.group(1)),
-        "validator_id": int(m.group(2)),
-        "source": "zeam_text",
-    }
 
 
 def _parse_chain_status_line(line: str, status: dict[str, Any]) -> bool:
@@ -309,10 +163,15 @@ def _read_host_events(
             continue
         pending_chain_status: dict[str, Any] | None = None
         last_ts_ms = 0.0
+        parser = get_parser_for_host(host_dir.name)
         for host_name, line in _host_file_lines(host_dir.name):
-            parsed_ts_ms = parse_shadow_timestamp(line) * 1000
-            if parsed_ts_ms > 0:
-                last_ts_ms = parsed_ts_ms
+            shadow_ts_ms = parse_shadow_timestamp(line) * 1000
+            if shadow_ts_ms > 0:
+                last_ts_ms = shadow_ts_ms
+
+            ts_ms = parser.parse_timestamp(line, shadow_ts_ms or last_ts_ms)
+            if ts_ms == 0.0:
+                ts_ms = shadow_ts_ms or last_ts_ms
 
             if pending_chain_status is not None:
                 done = _parse_chain_status_line(line, pending_chain_status)
@@ -321,46 +180,19 @@ def _read_host_events(
                         _append("chain_status", host_name, pending_chain_status)
                     pending_chain_status = None
 
-            if "LEAN-INTEROP-TEST" in line:
-                if "RECEIVE-ATTESTATION" in line:
-                    e = _parse_interop_attestation(line)
-                    if e:
-                        _append("receive_attestation", host_name, e)
-                elif "PUBLISH-BLOCK" in line:
-                    e = _parse_interop_publish_block(line)
-                    if e:
-                        _append("publish_block", host_name, e)
-                elif "PUBLISH-ATTESTATION" in line:
-                    e = _parse_interop_publish_attestation(line)
-                    if e:
-                        _append("publish_attestation", host_name, e)
-            else:
-                if "CHAIN STATUS" in line:
-                    pending_chain_status = {
-                        "ts_ms": round(parsed_ts_ms or last_ts_ms, 1),
-                        "source": "qlean_text" if host_name.startswith("qlean-") else "zeam_text",
-                    }
-                    _parse_chain_status_line(line, pending_chain_status)
-                elif "received gossip attestation for slot=" in line:
-                    e = _parse_zeam_receive_attestation(line)
-                    if e:
-                        _append("receive_attestation", host_name, e)
-                elif "Received block 0x" in line:
-                    e = _parse_qlean_receive_block(line)
-                    if e:
-                        _append("receive_block", host_name, e)
-                elif "received gossip block for slot=" in line:
-                    e = _parse_zeam_receive_block(line)
-                    if e:
-                        _append("receive_block", host_name, e)
-                elif "published block to network:" in line:
-                    e = _parse_zeam_publish_block(line)
-                    if e:
-                        _append("publish_block", host_name, e)
-                elif "published attestation to network:" in line:
-                    e = _parse_zeam_publish_attestation(line)
-                    if e:
-                        _append("publish_attestation", host_name, e)
+            if "CHAIN STATUS" in line:
+                pending_chain_status = {
+                    "ts_ms": round(ts_ms, 1),
+                    "source": f"{parser.name}_text",
+                }
+                _parse_chain_status_line(line, pending_chain_status)
+                continue
+
+            parsed = parser.parse_line(line, ts_ms)
+            for evt in parsed:
+                kind = evt.pop("_kind", None)
+                if kind and kind in events:
+                    _append(kind, host_name, evt)
 
     return events
 
@@ -450,7 +282,7 @@ def _compute_attestation_coverage_stats(
     known_times: dict[int, dict[str, dict[tuple[int, int], float]]] = defaultdict(
         lambda: defaultdict(dict)
     )
-    saw_zeam_text = False
+    sources_seen: set[str] = set()
 
     for host_name, host_events in pa.items():
         for evt in host_events:
@@ -463,7 +295,7 @@ def _compute_attestation_coverage_stats(
             previous = known_times[slot][host_name].get(att_id)
             if previous is None or ts_ms < previous:
                 known_times[slot][host_name][att_id] = ts_ms
-            saw_zeam_text = saw_zeam_text or evt.get("source") == "zeam_text"
+            sources_seen.add(evt.get("source", "unknown"))
 
     for host_name, host_events in ra.items():
         for evt in host_events:
@@ -473,7 +305,7 @@ def _compute_attestation_coverage_stats(
             previous = known_times[slot][host_name].get(att_id)
             if previous is None or ts_ms < previous:
                 known_times[slot][host_name][att_id] = ts_ms
-            saw_zeam_text = saw_zeam_text or evt.get("source") == "zeam_text"
+            sources_seen.add(evt.get("source", "unknown"))
 
     slot_stats: list[dict[str, Any]] = []
     n_nodes = len(host_names)
@@ -531,10 +363,10 @@ def _compute_attestation_coverage_stats(
 
     if not published_by_slot:
         warnings.append("No attestation publish events found")
-    if saw_zeam_text:
-        warnings.append(
-            "zeam text fallback uses (slot, validator_id), not a cryptographic attestation ID"
-        )
+
+    for parser in all_parsers():
+        if parser.attestation_id_warning and f"{parser.name}_text" in sources_seen:
+            warnings.append(parser.attestation_id_warning)
 
     summary: dict[str, Any] = {}
     slots_with_all_fields = [

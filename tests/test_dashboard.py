@@ -461,6 +461,57 @@ validators:
             self.assertEqual(detail["slot_stats"]["n_received"], 2)
 
 
+    def test_live_chain_view_uses_incremental_events_before_stats_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DashboardDB(Path(tmp) / "runs.db")
+            run_dir = Path(tmp) / "run-live"
+            run_dir.mkdir()
+            db.start_run(
+                "run-live",
+                run_dir,
+                {
+                    "run_id": "run-live",
+                    "simulation": {"duration_secs": 120, "total_nodes": 2},
+                },
+                [],
+            )
+            db.insert_events(
+                "run-live",
+                [
+                    {
+                        "kind": "chain_status",
+                        "host": "zeam-0",
+                        "slot": 2,
+                        "ts_ms": 24000.0,
+                        "message": "zeam-0 reported chain status",
+                        "payload": {
+                            "slot": 2,
+                            "head_slot": 2,
+                            "head_root": "0xhead",
+                            "latest_justified_slot": 1,
+                            "latest_justified_root": "0xjustified",
+                            "latest_finalized_slot": 0,
+                            "latest_finalized_root": "0xfinalized",
+                            "ts_ms": 24000.0,
+                            "source": "zeam_text",
+                        },
+                    }
+                ],
+            )
+
+            chain = db.get_chain("run-live", slot=3)
+            if chain is None:
+                self.fail("expected live chain data")
+            self.assertEqual(chain["slots"], [2])
+            self.assertEqual(chain["selected_slot"], 3)
+            self.assertEqual(len(chain["peers"]), 1)
+            self.assertEqual(chain["peers"][0]["peer"], "zeam-0")
+            self.assertEqual(chain["peers"][0]["reported_slot"], 2)
+            self.assertEqual(chain["peers"][0]["head_slot"], 2)
+            self.assertEqual(chain["peers"][0]["justified_slot"], 1)
+            self.assertEqual(chain["peers"][0]["finalized_slot"], 0)
+
+
 class DashboardEventTests(unittest.TestCase):
     def test_event_parser_mappings_and_chain_deltas(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

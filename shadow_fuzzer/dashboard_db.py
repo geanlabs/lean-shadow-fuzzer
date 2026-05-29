@@ -833,26 +833,50 @@ class DashboardDB:
             return None
         latest: dict[str, dict[str, Any]] = {}
         slots: list[int] = []
-        for slot_entry in run["stats"].get("chain_status", {}).get("slots", []):
-            chain_slot = int(slot_entry.get("slot", 0))
+
+        def update_latest(host: str, chain_slot: int, status: dict[str, Any]) -> None:
             slots.append(chain_slot)
             if slot is not None and chain_slot > slot:
-                continue
+                return
+            previous = latest.get(host)
+            if previous is None or chain_slot >= previous["reported_slot"]:
+                latest[host] = {
+                    "peer": host,
+                    "reported_slot": chain_slot,
+                    "head_slot": status.get("head_slot"),
+                    "head_root": status.get("head_root"),
+                    "justified_slot": status.get("latest_justified_slot"),
+                    "justified_root": status.get("latest_justified_root"),
+                    "finalized_slot": status.get("latest_finalized_slot"),
+                    "finalized_root": status.get("latest_finalized_root"),
+                    "ts_ms": status.get("ts_ms"),
+                    "source": status.get("source"),
+                }
+
+        for slot_entry in run["stats"].get("chain_status", {}).get("slots", []):
+            chain_slot = int(slot_entry.get("slot", 0))
             for host, status in slot_entry.get("hosts", {}).items():
-                previous = latest.get(host)
-                if previous is None or chain_slot >= previous["reported_slot"]:
-                    latest[host] = {
-                        "peer": host,
-                        "reported_slot": chain_slot,
-                        "head_slot": status.get("head_slot"),
-                        "head_root": status.get("head_root"),
-                        "justified_slot": status.get("latest_justified_slot"),
-                        "justified_root": status.get("latest_justified_root"),
-                        "finalized_slot": status.get("latest_finalized_slot"),
-                        "finalized_root": status.get("latest_finalized_root"),
-                        "ts_ms": status.get("ts_ms"),
-                        "source": status.get("source"),
-                    }
+                update_latest(host, chain_slot, status)
+
+        # Live runs do not have final stats.json yet. Fill the Chain tab from
+        # chain_status events inserted by RunLogWatcher's incremental parser.
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM events
+                WHERE run_id = ?
+                  AND kind = 'chain_status'
+                  AND slot IS NOT NULL
+                ORDER BY slot ASC, ts_ms ASC, id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        for row in rows:
+            event = self._row_to_event(row)
+            chain_slot = int(event["slot"])
+            payload = event["payload"]
+            update_latest(str(event["host"]), chain_slot, payload)
+
         unique_slots = sorted(set(slots))
         selected_slot = slot
         if selected_slot is None and unique_slots:

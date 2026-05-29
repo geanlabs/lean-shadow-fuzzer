@@ -51,7 +51,7 @@ if [ -n "${QLEAN_SHADOW_XMSS_VERIFY_AGGREGATED_SIGNATURES_RATE:-}" ]; then
     shadow_agg_flags="${shadow_agg_flags} --shadow-xmss-verify-aggregated-signatures-rate ${QLEAN_SHADOW_XMSS_VERIFY_AGGREGATED_SIGNATURES_RATE}"
 fi
 
-node_binary="$scriptDir/qlean/build/out/bin/qlean \
+node_binary="$HOME/dev/qlean-mini/.build/out/bin/qlean \
       --genesis-dir $configDir \
       --data-dir $dataDir/$item \
       --node-id $item --node-key $configDir/$privKeyPath \
@@ -84,4 +84,4 @@ node_docker="$QLEAN_IMAGE \
       -ldebug"
 
 # choose either binary or docker
-node_setup="docker"
+node_setup="binary"

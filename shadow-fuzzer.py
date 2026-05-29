@@ -502,6 +502,7 @@ def _run_genesis(
             "--genesis-time",
             str(SHADOW_GENESIS_TIME),
         ],
+        env={**os.environ, "DOCKER_USE_SUDO": "true"},
         check=True,
     )
     _store_hash_sig_key_cache(genesis_dir, cache_dir)
@@ -592,7 +593,7 @@ def _run_shadow(run_dir: Path, resolved: dict[str, Any], dry_run: bool = False) 
 
     if runner == "local":
         subprocess.run(
-            ["shadow", "-d", str(shadow_data), str(shadow_yaml)],
+            ["shadow", "-d", str(shadow_data), "--parallelism", "16", str(shadow_yaml)],
             check=True,
         )
     elif runner == "docker-arm":

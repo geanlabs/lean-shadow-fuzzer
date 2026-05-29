@@ -7,16 +7,14 @@ import time
 from pathlib import Path
 
 from .dashboard_db import DashboardDB
-from .dashboard_events import events_from_run, max_simulated_seconds_from_run, stats_from_run
+from .dashboard_events import IncrementalEventReader
 
 
 class RunLogWatcher:
     """Poll Shadow host logs while a run is active.
 
-    The parser intentionally reparses the run directory each tick and relies on
-    SQLite's event keys to deduplicate. Fuzzer runs are small enough for this to
-    be simpler and more robust than maintaining file offsets across Shadow's
-    output layout.
+    The reader keeps per-file offsets and only parses lines appended since the
+    previous poll, avoiding repeated full-run event materialization.
     """
 
     def __init__(
@@ -26,13 +24,14 @@ class RunLogWatcher:
         run_dir: str | Path,
         duration_secs: float | None,
         *,
-        poll_interval: float = 1.0,
+        poll_interval: float = 5.0,
     ) -> None:
         self.db = db
         self.run_id = run_id
         self.run_dir = Path(run_dir)
         self.duration_secs = duration_secs
         self.poll_interval = poll_interval
+        self.reader = IncrementalEventReader(self.run_dir)
         self.started = time.monotonic()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -54,17 +53,10 @@ class RunLogWatcher:
     def snapshot(self) -> None:
         wall_elapsed = time.monotonic() - self.started
         try:
-            events = events_from_run(self.run_dir)
-            self.db.insert_events(self.run_id, events)
-            simulated = max_simulated_seconds_from_run(self.run_dir)
-            run = self.db.get_run(self.run_id)
-            if run:
-                stats = stats_from_run(self.run_dir, run.get("metadata", {}))
-                self.db.update_stats_snapshot(
-                    self.run_id,
-                    stats,
-                    warnings=stats.get("warnings", []),
-                )
+            events = self.reader.read_new_events()
+            if events:
+                self.db.insert_events(self.run_id, events)
+            simulated = self.reader.max_ts_ms / 1000
         except FileNotFoundError:
             simulated = 0.0
         except Exception as exc:

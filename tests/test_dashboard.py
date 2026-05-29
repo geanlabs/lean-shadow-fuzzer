@@ -15,7 +15,7 @@ FUZZER_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FUZZER_ROOT))
 
 from shadow_fuzzer.dashboard_db import DashboardDB
-from shadow_fuzzer.dashboard_events import events_from_run
+from shadow_fuzzer.dashboard_events import IncrementalEventReader, events_from_run
 from shadow_fuzzer.dashboard_server import create_app
 from shadow_fuzzer.dashboard_time import chain_slot_from_simulated_seconds, max_chain_slot_for_duration
 
@@ -488,6 +488,41 @@ class DashboardEventTests(unittest.TestCase):
             self.assertIn("chain_status", kinds)
             self.assertIn("justified", kinds)
             self.assertIn("finalized", kinds)
+
+
+    def test_incremental_event_reader_only_reads_appended_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            host_dir = run_dir / "shadow.data" / "hosts" / "qlean_0"
+            host_dir.mkdir(parents=True)
+            stdout = host_dir / "qlean.stdout"
+            stdout.write_text(
+                "\n".join(
+                    [
+                        '["LEAN-INTEROP-TEST", 946684864000, "PUBLISH-ATTESTATION", [1, [0, 0, 0, 1, "abc"]]]',
+                        "1.1.1 00:01:07.000000 CHAIN STATUS Current Slot: 3 Head Slot: 3",
+                    ]
+                )
+                + "\n"
+            )
+
+            reader = IncrementalEventReader(run_dir)
+            first = reader.read_new_events()
+            self.assertEqual([event["kind"] for event in first], ["attestation_sent"])
+            self.assertEqual(reader.read_new_events(), [])
+
+            with stdout.open("a") as f:
+                f.write("Head Block Root: 0xbeef\n")
+                f.write("Latest Justified: Slot 2 | Root: 0xcafe\n")
+                f.write("Latest Finalized: Slot 1 | Root: 0xfade\n")
+
+            second = reader.read_new_events()
+            kinds = [event["kind"] for event in second]
+            self.assertIn("chain_status", kinds)
+            self.assertIn("justified", kinds)
+            self.assertIn("finalized", kinds)
+            self.assertEqual(reader.read_new_events(), [])
+            self.assertGreater(reader.max_ts_ms, 0)
 
 
 class DashboardAPITests(unittest.TestCase):

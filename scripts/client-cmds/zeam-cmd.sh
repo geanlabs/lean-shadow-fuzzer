@@ -87,7 +87,7 @@ case "$zeam_chain_worker" in
         ;;
 esac
 
-node_binary="$scriptDir/../zig-out/bin/zeam $zeam_global_flags node \
+node_binary="$HOME/dev/zeam/zig-out/bin/zeam $zeam_global_flags node \
       --custom-genesis $configDir \
       --validator-config $validatorConfig \
       --data-dir $dataDir/$item \
@@ -118,4 +118,4 @@ node_docker="--security-opt seccomp=unconfined blockblaz/zeam:devnet4 $zeam_glob
       $chain_worker_flag"
 
 # choose either binary or docker
-node_setup="docker"
+node_setup="binary"

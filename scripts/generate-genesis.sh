@@ -5,6 +5,13 @@
 
 set -e
 
+# Docker sudo support for users not in docker group
+if [ "${DOCKER_USE_SUDO:-}" = "true" ]; then
+    DOCKER_CMD="sudo docker"
+else
+    DOCKER_CMD="docker"
+fi
+
 # ========================================
 # Configuration
 # ========================================
@@ -291,9 +298,9 @@ else
     CURRENT_GID=$(id -g)
 
     # Pull latest image first
-    docker pull "$HASH_SIG_CLI_IMAGE" || true
+    $DOCKER_CMD pull "$HASH_SIG_CLI_IMAGE" || true
 
-    docker run --rm --pull=never \
+    $DOCKER_CMD run --rm --pull=never \
       --user "$CURRENT_UID:$CURRENT_GID" \
       -v "$GENESIS_DIR_ABS:/genesis" \
       "$HASH_SIG_CLI_IMAGE" \
@@ -492,9 +499,9 @@ echo "   Executing docker command..."
 
 # Pull latest image first 
 echo "   Pulling latest image: $PK_DOCKER_IMAGE"
-docker pull "$PK_DOCKER_IMAGE" || true
+$DOCKER_CMD pull "$PK_DOCKER_IMAGE" || true
 
-docker run --rm --pull=never \
+$DOCKER_CMD run --rm --pull=never \
   --user "$CURRENT_UID:$CURRENT_GID" \
   -v "$PARENT_DIR_ABS:/data" \
   "$PK_DOCKER_IMAGE" \

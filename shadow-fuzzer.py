@@ -1022,7 +1022,7 @@ def main() -> None:
             final_status = "error" if shadow_error else "complete"
 
             # Render analysis notebooks if enabled and run succeeded
-            if not dry_run and final_status != "error" and resolved.get("render_notebooks"):
+            if not dry_run and final_status != "error" and resolved.get("fuzzer", {}).get("render_notebooks"):
                 try:
                     print("  Rendering analysis notebooks...")
                     _render_notebooks(run_dir)

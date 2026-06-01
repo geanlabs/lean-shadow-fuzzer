@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .base import ClientParser
+from .base import ClientParser, parse_block_size_bytes
 
 _SOURCE_STRUCTURED = "qlean_structured"
 _SOURCE_TEXT = "qlean_text"
@@ -27,14 +27,18 @@ class QleanParser(ClientParser):
             line,
         )
         if m:
-            events.append({
+            evt = {
                 "_kind": "receive_block",
                 "ts": ts_ms / 1000,
                 "slot": int(m.group(2)),
                 "block_hash": m.group(1).lower(),
                 "parent": m.group(3).lower(),
                 "source": _SOURCE_TEXT,
-            })
+            }
+            size_bytes = parse_block_size_bytes(line)
+            if size_bytes is not None:
+                evt["size_bytes"] = size_bytes
+            events.append(evt)
 
         return events
 
@@ -98,13 +102,17 @@ class QleanParser(ClientParser):
         proposer_m = re.search(r'"proposer":\s*(\d+)', payload)
         if not slot_m:
             return None
-        return {
+        evt = {
             "ts_ms": ts_ms,
             "slot": int(slot_m.group(1)),
             "block_hash": hash_m.group(1) if hash_m else "",
             "proposer": int(proposer_m.group(1)) if proposer_m else 0,
             "source": _SOURCE_STRUCTURED,
         }
+        size_bytes = parse_block_size_bytes(payload)
+        if size_bytes is not None:
+            evt["size_bytes"] = size_bytes
+        return evt
 
     @staticmethod
     def _parse_interop_publish_attestation(line: str) -> dict[str, Any] | None:

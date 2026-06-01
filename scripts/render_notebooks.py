@@ -189,14 +189,47 @@ def render_run(run_dir: Path) -> None:
         body, _ = exporter.from_notebook_node(nb)
 
         # Inject Plotly.js CDN so embedded plots render
-        # Place it right before the first Plotly.newPlot call or at end of body
         plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+
+        # Inject CSS + toggle to hide code cells by default
+        _CODE_TOGGLE_CSS = """<style>
+/* Hide code input cells by default */
+.jp-InputArea, .input { display: none !important; }
+/* Leave output cells visible */
+.jp-OutputArea, .output_wrapper, .output { display: block !important; }
+/* Toggle button */
+.code-toggle-btn {
+    position: fixed; top: 12px; right: 16px; z-index: 9999;
+    padding: 6px 14px; font-size: 12px; font-family: system-ui, sans-serif;
+    background: var(--muted, #f0f0f0); color: var(--muted-foreground, #333);
+    border: 1px solid var(--border, #ddd); border-radius: 6px; cursor: pointer;
+    opacity: 0.7; transition: opacity 0.15s;
+}
+.code-toggle-btn:hover { opacity: 1; }
+/* When code is shown */
+body.show-code .jp-InputArea, body.show-code .input { display: block !important; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var btn = document.createElement('button');
+    btn.className = 'code-toggle-btn';
+    btn.textContent = 'Show code';
+    btn.onclick = function() {
+        document.body.classList.toggle('show-code');
+        btn.textContent = document.body.classList.contains('show-code') ? 'Hide code' : 'Show code';
+    };
+    document.body.appendChild(btn);
+});
+</script>"""
+
         if "Plotly.newPlot" in body:
             body = body.replace(
                 '<div class="plotly-graph-div"',
-                f'{plotly_cdn}\n<div class="plotly-graph-div"',
-                1,  # Only replace first occurrence
+                f'{plotly_cdn}\n{_CODE_TOGGLE_CSS}\n<div class="plotly-graph-div"',
+                1,
             )
+        else:
+            body = body.replace('</body>', f'{plotly_cdn}\n{_CODE_TOGGLE_CSS}\n</body>', 1)
 
         html_path.write_text(body, encoding="utf-8")
         print(f"    -> {html_path}")

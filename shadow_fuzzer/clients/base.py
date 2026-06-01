@@ -1,7 +1,22 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
+
+
+def parse_block_size_bytes(line: str) -> int | None:
+    """Extract an integer block size from common log field formats."""
+    for pattern in (
+        r'"?\braw\b"?\s*[:=]\s*(\d+)\s*(?:bytes?|B)?\b',
+        r'"?\b(?:block[_ -]?)?size(?:_bytes)?\b"?\s*[:=]\s*(\d+)\s*(?:bytes?|B)?\b',
+        r'"?\bbytes\b"?\s*[:=]\s*(\d+)\b',
+        r"\b(\d+)\s*(?:bytes?|B)\b",
+    ):
+        m = re.search(pattern, line, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 class ClientParser(ABC):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .base import ClientParser
+from .base import ClientParser, parse_block_size_bytes
 
 _SOURCE = "zeam_text"
 
@@ -42,30 +42,53 @@ class ZeamParser(ClientParser):
             })
             return events
 
-        m = re.search(
-            r"received gossip block for slot=(\d+)\s+.*?proposer=(\d+)", line
-        )
+        m = re.search(r"received gossip block slot=(\d+)\s+proposer=(\d+)", line)
         if m:
-            events.append({
+            evt = {
                 "_kind": "receive_block",
                 "ts": ts_ms / 1000,
                 "slot": int(m.group(1)),
                 "proposer": int(m.group(2)),
                 "source": _SOURCE,
-            })
+            }
+            size_bytes = parse_block_size_bytes(line)
+            if size_bytes is not None:
+                evt["size_bytes"] = size_bytes
+            events.append(evt)
+            return events
+
+        m = re.search(
+            r"received gossip block for slot=(\d+)\s+.*?proposer=(\d+)", line
+        )
+        if m:
+            evt = {
+                "_kind": "receive_block",
+                "ts": ts_ms / 1000,
+                "slot": int(m.group(1)),
+                "proposer": int(m.group(2)),
+                "source": _SOURCE,
+            }
+            size_bytes = parse_block_size_bytes(line)
+            if size_bytes is not None:
+                evt["size_bytes"] = size_bytes
+            events.append(evt)
             return events
 
         m = re.search(
             r"published block to network:\s+slot=(\d+)\s+proposer=(\d+)", line
         )
         if m:
-            events.append({
+            evt = {
                 "_kind": "publish_block",
                 "ts": ts_ms / 1000,
                 "slot": int(m.group(1)),
                 "proposer": int(m.group(2)),
                 "source": _SOURCE,
-            })
+            }
+            size_bytes = parse_block_size_bytes(line)
+            if size_bytes is not None:
+                evt["size_bytes"] = size_bytes
+            events.append(evt)
             return events
 
         m = re.search(

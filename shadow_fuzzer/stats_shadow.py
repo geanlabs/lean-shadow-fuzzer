@@ -427,6 +427,8 @@ def _compute_block_slot_stats(
                 }
             block_slots[slot]["proposer"] = evt.get("proposer", 0)
             block_slots[slot]["block_hash"] = evt.get("block_hash", "")
+            if "size_bytes" in evt:
+                block_slots[slot]["block_size_bytes"] = evt["size_bytes"]
             if (
                 "published_ms" not in block_slots[slot]
                 or publish_ms < block_slots[slot]["published_ms"]
@@ -449,6 +451,8 @@ def _compute_block_slot_stats(
                 reception = block_slots[slot]["receive_timestamps_ms"]
                 if host_name not in reception or offset < reception[host_name]:
                     reception[host_name] = offset
+                if "size_bytes" in evt and "block_size_bytes" not in block_slots[slot]:
+                    block_slots[slot]["block_size_bytes"] = evt["size_bytes"]
 
     slot_list: list[dict[str, Any]] = []
     for slot in sorted(block_slots.keys()):
@@ -460,6 +464,8 @@ def _compute_block_slot_stats(
         }
         if "published_ms" in s:
             slot_d["published_ms"] = s["published_ms"]
+        if "block_size_bytes" in s:
+            slot_d["block_size_bytes"] = s["block_size_bytes"]
         if reception:
             times = sorted(reception.values())
             slot_d["first_receive_ms"] = times[0]
@@ -474,6 +480,7 @@ def _compute_block_slot_stats(
         received = [s for s in slot_list if "first_receive_ms" in s]
         summary["n_published"] = len(published)
         summary["n_received"] = len(received)
+        summary["n_with_block_size"] = sum(1 for s in slot_list if "block_size_bytes" in s)
     else:
         summary["warning"] = "No block events found"
 

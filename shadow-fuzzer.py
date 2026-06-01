@@ -9,17 +9,20 @@ Usage:
   uv run shadow-fuzzer.py [config.toml]
   uv run shadow-fuzzer.py --dry-run config.example.docker-arm.toml
   uv run shadow-fuzzer.py --clean-output config.toml
+  uv run shadow-fuzzer.py --serve config.toml
 """
 
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import random
 import secrets
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -589,7 +592,7 @@ def _run_shadow(run_dir: Path, resolved: dict[str, Any], dry_run: bool = False) 
 
     if runner == "local":
         subprocess.run(
-            ["shadow", "-d", str(shadow_data), "--parallelism", "16", str(shadow_yaml)],
+            ["shadow", "-d", str(shadow_data), "--parallelism", "16", "--progress", "true", str(shadow_yaml)],
             check=True,
         )
     elif runner == "docker-arm":
@@ -609,7 +612,7 @@ def _run_shadow(run_dir: Path, resolved: dict[str, Any], dry_run: bool = False) 
                 "-w", str(project_root),
                 "--entrypoint", "/bin/bash",
                 docker_image,
-                "-c", f"shadow -d {shadow_data} {shadow_yaml}",
+                "-c", f"shadow -d {shadow_data} --progress true {shadow_yaml}",
             ],
             check=True,
         )
@@ -775,7 +778,72 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Run only a single run index (0-based) instead of the full sweep",
     )
+    parser.add_argument(
+        "--serve",
+        "-s",
+        action="store_true",
+        help="Start the observatory site (astro dev) alongside the fuzzer. "
+        "Auto-enables render_notebooks so completed runs appear on the site.",
+    )
     return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Observatory site subprocess management (--serve)
+# ---------------------------------------------------------------------------
+
+_site_process: subprocess.Popen[bytes] | None = None
+
+
+def _start_observatory_site() -> None:
+    """Spawn `npm run dev` in site/ as a background subprocess."""
+    global _site_process
+    site_dir = FUZZER_ROOT / "site"
+
+    if not (site_dir / "node_modules").is_dir():
+        print("Observatory site dependencies not installed. Running npm install...")
+        subprocess.run(
+            ["npm", "install"],
+            cwd=str(site_dir),
+            check=True,
+        )
+
+    print("Starting observatory site (astro dev)...")
+    _site_process = subprocess.Popen(
+        ["npm", "run", "dev"],
+        cwd=str(site_dir),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        preexec_fn=os.setsid,  # create new process group for clean kill
+    )
+    print("Observatory site: http://localhost:4321")
+    print()
+
+
+def _stop_observatory_site() -> None:
+    """Kill the astro dev server subprocess (if running)."""
+    global _site_process
+    if _site_process is None:
+        return
+    try:
+        # Kill entire process group so npm + astro both die
+        os.killpg(os.getpgid(_site_process.pid), signal.SIGTERM)
+        _site_process.wait(timeout=5)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            os.killpg(os.getpgid(_site_process.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    _site_process = None
+
+
+def _handle_shutdown_signal(signum: int, frame: Any) -> None:
+    """Forward SIGINT/SIGTERM to the site subprocess, then re-raise."""
+    print("\nShutting down observatory site...")
+    _stop_observatory_site()
+    # Re-raise the signal to trigger the default handler (exit)
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
 
 
 def main() -> None:
@@ -810,6 +878,14 @@ def main() -> None:
     print(f"Fuzzer: max_runs={max_runs}, output_dir={output_dir}")
     print(f"Config: {config_path_abs}")
     print()
+
+    # --serve: auto-enable notebook rendering and start astro dev server
+    if args.serve:
+        fuzzer["render_notebooks"] = True
+        atexit.register(_stop_observatory_site)
+        signal.signal(signal.SIGINT, _handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, _handle_shutdown_signal)
+        _start_observatory_site()
 
     if args.clean_output:
         removed = _clean_output_dir(output_dir)
@@ -964,9 +1040,11 @@ def main() -> None:
 
     if failed_runs:
         print(f"Finished {max_runs} run(s) with {failed_runs} Shadow error(s).")
+        _stop_observatory_site()
         sys.exit(1)
     else:
         print(f"All {max_runs} runs complete.")
+        _stop_observatory_site()
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ export function getStaticPaths() {
   const siteData = SiteData.load();
   const runs = siteData.runs;
   if (runs.length === 0) {
-    return [{ params: { runId: "_placeholder" } }]; // Placeholder to avoid build errors
+    return [{ params: { runId: "_placeholder" } }];
   }
   return runs.map((run) => ({
     params: { runId: run.run_id },

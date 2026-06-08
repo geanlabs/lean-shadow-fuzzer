@@ -803,6 +803,12 @@ def _parse_args() -> argparse.Namespace:
         help="Start the observatory site (astro dev) alongside the fuzzer. "
         "Auto-enables render_notebooks so completed runs appear on the site.",
     )
+    parser.add_argument(
+        "--serve-only",
+        action="store_true",
+        help="Start the observatory site without running any fuzzer simulations. "
+        "Previous run data will be available in the browser.",
+    )
     return parser.parse_args()
 
 
@@ -904,13 +910,25 @@ def main() -> None:
     print(f"Config: {config_path_abs}")
     print()
 
-    # --serve: auto-enable notebook rendering and start astro dev server
-    if args.serve:
+    # --serve / --serve-only: auto-enable notebook rendering and start astro dev server
+    if args.serve or args.serve_only:
         fuzzer["render_notebooks"] = True
         atexit.register(_stop_observatory_site)
         signal.signal(signal.SIGINT, _handle_shutdown_signal)
         signal.signal(signal.SIGTERM, _handle_shutdown_signal)
         _start_observatory_site()
+
+    # --serve-only: just serve the site, no fuzzer runs
+    if args.serve_only:
+        print("Serve-only mode: no new runs will be executed.")
+        print("View previous runs at http://0.0.0.0:4321")
+        print("Press Ctrl+C to stop.")
+        # Block until interrupted; cleanup is handled by atexit/signal handlers
+        try:
+            signal.pause()
+        except KeyboardInterrupt:
+            pass
+        return
 
     if args.clean_output:
         removed = _clean_output_dir(output_dir)

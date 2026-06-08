@@ -20,6 +20,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 # Ensure repository root is in sys.path when run as a standalone script
 fuzzer_root = Path(__file__).resolve().parent.parent
 if str(fuzzer_root) not in sys.path:
@@ -186,6 +188,7 @@ def _read_host_events(
         "publish_block": defaultdict(list),
         "publish_attestation": defaultdict(list),
         "chain_status": defaultdict(list),
+        "bandwidth": defaultdict(list),
     }
 
     for host_dir in sorted(hosts_dir.iterdir()):
@@ -576,10 +579,135 @@ def _compute_chain_status_stats(
     return {"slots": slot_list, "summary": summary}
 
 
+def _compute_bandwidth_stats(
+    events: dict[str, dict[str, list[dict[str, Any]]]],
+    genesis_ms: int,
+) -> dict[str, Any]:
+    bandwidth_events = events.get("bandwidth", {})
+    event_rows: list[dict[str, Any]] = []
+    totals_by_slot: dict[tuple[int, str, str, str, str, str], int] = defaultdict(int)
+
+    for host_name, host_events in bandwidth_events.items():
+        for evt in host_events:
+            ts_ms = _event_ts_ms(evt)
+            offset_ms = ts_ms - genesis_ms
+            slot = math.floor(offset_ms / 4000)
+            slot_offset_ms = round(offset_ms - slot * 4000, 1)
+            row = {
+                "host": host_name,
+                "ts_ms": round(offset_ms, 1),
+                "slot": slot,
+                "slot_offset_ms": slot_offset_ms,
+                "direction": str(evt["direction"]),
+                "protocol": str(evt["protocol"]),
+                "message_kind": str(evt["message_kind"]),
+                "bytes": int(evt["bytes"]),
+                "delivery": str(evt["delivery"]),
+                "source": evt.get("source", "unknown"),
+            }
+            if "consensus_slot" in evt:
+                row["consensus_slot"] = int(evt["consensus_slot"])
+            event_rows.append(row)
+
+            key = (
+                slot,
+                host_name,
+                row["direction"],
+                row["protocol"],
+                row["message_kind"],
+                row["delivery"],
+            )
+            totals_by_slot[key] += row["bytes"]
+
+    event_rows.sort(
+        key=lambda row: (
+            row["slot"],
+            row["slot_offset_ms"],
+            row["host"],
+            row["direction"],
+            row["protocol"],
+            row["message_kind"],
+            row["delivery"],
+        )
+    )
+    slot_rows = [
+        {
+            "slot": slot,
+            "host": host,
+            "direction": direction,
+            "protocol": protocol,
+            "message_kind": message_kind,
+            "delivery": delivery,
+            "bytes": bytes_total,
+        }
+        for (
+            slot,
+            host,
+            direction,
+            protocol,
+            message_kind,
+            delivery,
+        ), bytes_total in sorted(totals_by_slot.items())
+    ]
+
+    total_bytes = sum(row["bytes"] for row in event_rows)
+    inbound_bytes = sum(row["bytes"] for row in event_rows if row["direction"] == "in")
+    outbound_bytes = sum(row["bytes"] for row in event_rows if row["direction"] == "out")
+    duplicate_inclusive_gossip_bytes = sum(
+        row["bytes"]
+        for row in event_rows
+        if row["direction"] == "in"
+        and row["protocol"] == "gossip"
+        and row["delivery"] == "unfiltered"
+    )
+
+    summary: dict[str, Any] = {
+        "total_bytes": total_bytes,
+        "inbound_bytes": inbound_bytes,
+        "outbound_bytes": outbound_bytes,
+        "duplicate_inclusive_gossip_bytes": duplicate_inclusive_gossip_bytes,
+        "event_count": len(event_rows),
+        "slots_with_data": len({row["slot"] for row in event_rows}),
+    }
+    if not event_rows:
+        summary["warning"] = "No bandwidth events found"
+
+    return {"events": event_rows, "slots": slot_rows, "summary": summary}
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     if path.is_file():
         return json.loads(path.read_text())
     return {}
+
+
+def _load_genesis_ms(run_path: Path) -> int | None:
+    genesis_config_path = run_path / "genesis" / "config.yaml"
+    if not genesis_config_path.is_file():
+        return None
+    try:
+        config = yaml.safe_load(genesis_config_path.read_text()) or {}
+    except yaml.YAMLError:
+        return None
+    genesis_time = config.get("GENESIS_TIME", config.get("genesis_time"))
+    if genesis_time is None:
+        return None
+    genesis_ms = int(genesis_time) * 1000
+    if genesis_ms >= SHADOW_EPOCH_MS:
+        genesis_ms -= SHADOW_EPOCH_MS
+    return genesis_ms
+
+
+def _infer_genesis_ms_from_events(
+    events: dict[str, dict[str, list[dict[str, Any]]]],
+) -> int:
+    genesis_ms = 0
+    for host_events in events["receive_attestation"].values():
+        for evt in host_events:
+            ts_val = _event_ts_ms(evt)
+            if genesis_ms == 0 or ts_val < genesis_ms:
+                genesis_ms = ts_val
+    return int((genesis_ms // 1_000_000) * 1_000_000)
 
 
 def _summarize_event_counts(
@@ -633,6 +761,11 @@ def collect_stats(run_dir: str, metadata: dict[str, Any] | None = None) -> dict[
             },
             "blocks": {"slots": [], "summary": {"warning": warnings[0]}},
             "chain_status": {"slots": [], "summary": {"warning": warnings[0]}},
+            "bandwidth": {
+                "events": [],
+                "slots": [],
+                "summary": {"warning": warnings[0]},
+            },
             "attestations": {
                 "slots": [],
                 "summary": {"warning": warnings[0]},
@@ -667,13 +800,9 @@ def collect_stats(run_dir: str, metadata: dict[str, Any] | None = None) -> dict[
     if total_receive_att == 0 and total_receive_block == 0:
         warnings.append("No propagation events found in any host stdout/stderr")
 
-    genesis_ms = 0
-    for host_events in events["receive_attestation"].values():
-        for evt in host_events:
-            ts_val = _event_ts_ms(evt)
-            if genesis_ms == 0 or ts_val < genesis_ms:
-                genesis_ms = ts_val
-    genesis_ms = (genesis_ms // 1_000_000) * 1_000_000
+    genesis_ms = _load_genesis_ms(run_path)
+    if genesis_ms is None:
+        genesis_ms = _infer_genesis_ms_from_events(events)
 
     attestation_stats = _compute_attestation_slot_stats(events, int(genesis_ms))
     attestation_stats["coverage"] = _compute_attestation_coverage_stats(
@@ -681,6 +810,7 @@ def collect_stats(run_dir: str, metadata: dict[str, Any] | None = None) -> dict[
     )
     block_stats = _compute_block_slot_stats(events, int(genesis_ms))
     chain_status_stats = _compute_chain_status_stats(events, int(genesis_ms))
+    bandwidth_stats = _compute_bandwidth_stats(events, int(genesis_ms))
 
     region_counts: dict[str, int] = {}
     for r in regions.values():
@@ -695,6 +825,7 @@ def collect_stats(run_dir: str, metadata: dict[str, Any] | None = None) -> dict[
     result: dict[str, Any] = {
         "blocks": block_stats,
         "chain_status": chain_status_stats,
+        "bandwidth": bandwidth_stats,
         "attestations": attestation_stats,
         "event_counts": _summarize_event_counts(events),
         "node_distribution": {

@@ -12,6 +12,9 @@ _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _TS_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3,9})Z"
 )
+_BANDWIDTH_KV_RE = re.compile(
+    r'\b(direction|protocol|message_kind|bytes|delivery|consensus_slot)=("[^"]*"|[^\s,]+)'
+)
 
 
 class EthlambdaParser(ClientParser):
@@ -35,6 +38,28 @@ class EthlambdaParser(ClientParser):
     def parse_line(self, line: str, ts_ms: float) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
         line = _ANSI_RE.sub("", line)
+
+        if "P2P bandwidth event" in line:
+            fields = {
+                key: value.strip('"')
+                for key, value in _BANDWIDTH_KV_RE.findall(line)
+            }
+            required = {"direction", "protocol", "message_kind", "bytes", "delivery"}
+            if required.issubset(fields):
+                evt: dict[str, Any] = {
+                    "_kind": "bandwidth",
+                    "ts": ts_ms / 1000,
+                    "direction": fields["direction"],
+                    "protocol": fields["protocol"],
+                    "message_kind": fields["message_kind"],
+                    "bytes": int(fields["bytes"]),
+                    "delivery": fields["delivery"],
+                    "source": _SOURCE,
+                }
+                if "consensus_slot" in fields:
+                    evt["consensus_slot"] = int(fields["consensus_slot"])
+                events.append(evt)
+            return events
 
         # --- receive_attestation (aggregated, via gossip) ---
         m = re.search(

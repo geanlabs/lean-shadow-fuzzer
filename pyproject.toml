@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "coolname>=2.0",
+    "pandas-stubs~=3.0.3",
     "pyyaml>=6.0",
 ]
 

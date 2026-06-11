@@ -457,6 +457,83 @@ def _compute_attestation_coverage_stats(
     }
 
 
+def _compute_attestation_validator_slot_stats(
+    events: dict[str, dict[str, list[dict[str, Any]]]],
+    genesis_ms: int,
+) -> list[dict[str, Any]]:
+    pa = events["publish_attestation"]
+    ra = events["receive_attestation"]
+
+    first_publish_ms: dict[tuple[int, int], float] = {}
+    published_by_slot: dict[int, set[tuple[int, int]]] = defaultdict(set)
+
+    for host_name, host_events in pa.items():
+        for evt in host_events:
+            slot = int(evt["slot"])
+            validator_id = int(evt.get("validator_id", 0))
+            att_id = (slot, validator_id)
+            ts_ms = _event_ts_ms(evt)
+            published_by_slot[slot].add(att_id)
+            if att_id not in first_publish_ms or ts_ms < first_publish_ms[att_id]:
+                first_publish_ms[att_id] = ts_ms
+
+    if not first_publish_ms:
+        return []
+
+    known_times: dict[int, dict[str, dict[tuple[int, int], float]]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
+
+    for host_name, host_events in pa.items():
+        for evt in host_events:
+            slot = int(evt["slot"])
+            validator_id = int(evt.get("validator_id", 0))
+            att_id = (slot, validator_id)
+            ts_ms = _event_ts_ms(evt)
+            previous = known_times[slot][host_name].get(att_id)
+            if previous is None or ts_ms < previous:
+                known_times[slot][host_name][att_id] = ts_ms
+
+    for host_name, host_events in ra.items():
+        for evt in host_events:
+            slot = int(evt["slot"])
+            ts_ms = _event_ts_ms(evt)
+            n_participants = int(evt.get("num_participants", 0))
+            if n_participants > 0 and slot in published_by_slot:
+                for att_id in published_by_slot[slot]:
+                    previous = known_times[slot][host_name].get(att_id)
+                    if previous is None or ts_ms < previous:
+                        known_times[slot][host_name][att_id] = ts_ms
+            else:
+                validator_id = int(evt.get("validator_id", 0))
+                att_id = (slot, validator_id)
+                previous = known_times[slot][host_name].get(att_id)
+                if previous is None or ts_ms < previous:
+                    known_times[slot][host_name][att_id] = ts_ms
+
+    result: list[dict[str, Any]] = []
+    for att_id, pub_ms in sorted(first_publish_ms.items()):
+        slot, validator_id = att_id
+        propagation_times: list[float] = []
+        for host_name in known_times[slot]:
+            recv_ms = known_times[slot][host_name].get(att_id)
+            if recv_ms is not None:
+                propagation_times.append(recv_ms - pub_ms)
+
+        if propagation_times:
+            propagation_times.sort()
+            result.append(
+                {
+                    "slot": slot,
+                    "validator_id": validator_id,
+                    "published_ms": round(pub_ms - genesis_ms, 1),
+                    "propagation_times_ms": [round(t, 1) for t in propagation_times],
+                }
+            )
+
+    return result
+
+
 def _compute_block_slot_stats(
     events: dict[str, dict[str, list[dict[str, Any]]]],
     genesis_ms: int,
@@ -807,6 +884,9 @@ def collect_stats(run_dir: str, metadata: dict[str, Any] | None = None) -> dict[
     attestation_stats = _compute_attestation_slot_stats(events, int(genesis_ms))
     attestation_stats["coverage"] = _compute_attestation_coverage_stats(
         events, host_names
+    )
+    attestation_stats["validator_propagation"] = (
+        _compute_attestation_validator_slot_stats(events, int(genesis_ms))
     )
     block_stats = _compute_block_slot_stats(events, int(genesis_ms))
     chain_status_stats = _compute_chain_status_stats(events, int(genesis_ms))

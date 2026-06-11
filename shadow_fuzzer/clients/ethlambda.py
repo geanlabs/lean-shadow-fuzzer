@@ -61,6 +61,29 @@ class EthlambdaParser(ClientParser):
                 events.append(evt)
             return events
 
+        # --- receive_attestation (individual, via gossip) ---
+        m = re.search(
+            r"Received attestation from gossip "
+            r"slot=(\d+)\s+validator=(\d+)\s+head_root=([0-9a-fA-F]+)\s+"
+            r"target_slot=(\d+)\s+target_root=([0-9a-fA-F]+)\s+"
+            r"source_slot=(\d+)\s+source_root=([0-9a-fA-F]+)",
+            line,
+        )
+        if m:
+            events.append({
+                "_kind": "receive_attestation",
+                "ts": ts_ms / 1000,
+                "slot": int(m.group(1)),
+                "validator_id": int(m.group(2)),
+                "head_root": m.group(3).lower(),
+                "target_slot": int(m.group(4)),
+                "target_root": m.group(5).lower(),
+                "source_slot": int(m.group(6)),
+                "source_root": m.group(7).lower(),
+                "source": _SOURCE,
+            })
+            return events
+
         # --- receive_attestation (aggregated, via gossip) ---
         m = re.search(
             r"Received aggregated attestation from gossip "

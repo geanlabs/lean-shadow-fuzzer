@@ -184,9 +184,11 @@ def _read_host_events(
 
     events: dict[str, dict[str, list[dict[str, Any]]]] = {
         "receive_attestation": defaultdict(list),
+        "receive_aggregation": defaultdict(list),
         "receive_block": defaultdict(list),
         "publish_block": defaultdict(list),
         "publish_attestation": defaultdict(list),
+        "publish_aggregation": defaultdict(list),
         "chain_status": defaultdict(list),
         "bandwidth": defaultdict(list),
     }
@@ -526,6 +528,64 @@ def _compute_attestation_validator_slot_stats(
                 {
                     "slot": slot,
                     "validator_id": validator_id,
+                    "published_ms": round(pub_ms - genesis_ms, 1),
+                    "propagation_times_ms": [round(t, 1) for t in propagation_times],
+                }
+            )
+
+    return result
+
+
+def _compute_aggregation_propagation_stats(
+    events: dict[str, dict[str, list[dict[str, Any]]]],
+    genesis_ms: int,
+) -> list[dict[str, Any]]:
+    pa = events.get("publish_aggregation", {})
+    ra = events.get("receive_aggregation", {})
+
+    if not pa:
+        return []
+
+    first_publish_ms: dict[tuple[int, str], float] = {}
+    for host_name, host_events in pa.items():
+        for evt in host_events:
+            slot = int(evt["slot"])
+            message_id = str(evt.get("message_id", ""))
+            if not message_id:
+                continue
+            key = (slot, message_id)
+            ts_ms = _event_ts_ms(evt)
+            if key not in first_publish_ms or ts_ms < first_publish_ms[key]:
+                first_publish_ms[key] = ts_ms
+
+    if not first_publish_ms:
+        return []
+
+    first_receive_ms: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
+    for host_name, host_events in ra.items():
+        for evt in host_events:
+            slot = int(evt["slot"])
+            message_id = str(evt.get("message_id", ""))
+            if not message_id:
+                continue
+            key = (slot, message_id)
+            ts_ms = _event_ts_ms(evt)
+            previous = first_receive_ms[key].get(host_name)
+            if previous is None or ts_ms < previous:
+                first_receive_ms[key][host_name] = ts_ms
+
+    result: list[dict[str, Any]] = []
+    for (slot, message_id), pub_ms in sorted(first_publish_ms.items()):
+        propagation_times: list[float] = []
+        for host_name, recv_ms in first_receive_ms.get((slot, message_id), {}).items():
+            propagation_times.append(recv_ms - pub_ms)
+
+        if propagation_times:
+            propagation_times.sort()
+            result.append(
+                {
+                    "slot": slot,
+                    "message_id": message_id,
                     "published_ms": round(pub_ms - genesis_ms, 1),
                     "propagation_times_ms": [round(t, 1) for t in propagation_times],
                 }
@@ -887,6 +947,9 @@ def collect_stats(run_dir: str, metadata: dict[str, Any] | None = None) -> dict[
     )
     attestation_stats["validator_propagation"] = (
         _compute_attestation_validator_slot_stats(events, int(genesis_ms))
+    )
+    attestation_stats["aggregation_propagation"] = (
+        _compute_aggregation_propagation_stats(events, int(genesis_ms))
     )
     block_stats = _compute_block_slot_stats(events, int(genesis_ms))
     chain_status_stats = _compute_chain_status_stats(events, int(genesis_ms))

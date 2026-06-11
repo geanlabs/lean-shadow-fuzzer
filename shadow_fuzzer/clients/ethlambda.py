@@ -84,7 +84,34 @@ class EthlambdaParser(ClientParser):
             })
             return events
 
-        # --- receive_attestation (aggregated, via gossip) ---
+        # --- receive_aggregation (new format with message_id) ---
+        m = re.search(
+            r"Received aggregated attestation from gossip .*?"
+            r"\bslot=(\d+).*?"
+            r"\bmessage_id=(\S+).*?"
+            r"\btarget_slot=(\d+).*?"
+            r"\btarget_root=([0-9a-fA-F]+).*?"
+            r"\bsource_slot=(\d+).*?"
+            r"\bsource_root=([0-9a-fA-F]+).*?"
+            r"\bparticipant_count=(\d+)",
+            line,
+        )
+        if m:
+            events.append({
+                "_kind": "receive_aggregation",
+                "ts": ts_ms / 1000,
+                "slot": int(m.group(1)),
+                "message_id": m.group(2),
+                "target_slot": int(m.group(3)),
+                "target_root": m.group(4).lower(),
+                "source_slot": int(m.group(5)),
+                "source_root": m.group(6).lower(),
+                "participant_count": int(m.group(7)),
+                "source": _SOURCE,
+            })
+            return events
+
+        # --- receive_attestation (aggregated, via gossip — old format) ---
         m = re.search(
             r"Received aggregated attestation from gossip "
             r"slot=(\d+)\s+target_slot=(\d+)\s+target_root=([0-9a-fA-F]+)\s+"
@@ -121,6 +148,33 @@ class EthlambdaParser(ClientParser):
                 "target_slot": int(m.group(3)),
                 "target_root": m.group(4).lower(),
                 "source_slot": int(m.group(5)),
+                "source": _SOURCE,
+            })
+            return events
+
+        # --- publish_aggregation (new format with message_id) ---
+        m = re.search(
+            r"Published aggregated attestation to gossipsub .*?"
+            r"\bslot=(\d+).*?"
+            r"\bmessage_id=(\S+).*?"
+            r"\btarget_slot=(\d+).*?"
+            r"\btarget_root=([0-9a-fA-F]+).*?"
+            r"\bsource_slot=(\d+).*?"
+            r"\bsource_root=([0-9a-fA-F]+).*?"
+            r"\bparticipant_count=(\d+)",
+            line,
+        )
+        if m:
+            events.append({
+                "_kind": "publish_aggregation",
+                "ts": ts_ms / 1000,
+                "slot": int(m.group(1)),
+                "message_id": m.group(2),
+                "target_slot": int(m.group(3)),
+                "target_root": m.group(4).lower(),
+                "source_slot": int(m.group(5)),
+                "source_root": m.group(6).lower(),
+                "participant_count": int(m.group(7)),
                 "source": _SOURCE,
             })
             return events

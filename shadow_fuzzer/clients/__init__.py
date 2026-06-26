@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from .base import ClientParser
 from .ethlambda import EthlambdaParser
+from .lantern import LanternParser
 from .qlean import QleanParser
 from .zeam import ZeamParser
 
-_PARSERS: list[ClientParser] = [EthlambdaParser(), QleanParser(), ZeamParser()]
+_PARSERS: list[ClientParser] = [
+    EthlambdaParser(),
+    QleanParser(),
+    LanternParser(),
+    ZeamParser(),
+]
 
 
 def get_parser_for_host(host_name: str) -> ClientParser:

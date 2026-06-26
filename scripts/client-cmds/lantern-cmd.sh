@@ -1,7 +1,8 @@
 #!/bin/bash
 
 #-----------------------lantern setup----------------------
-LANTERN_IMAGE="piertwo/lantern:v0.0.4"
+LANTERN_IMAGE="${LANTERN_IMAGE:-piertwo/lantern:v0.0.4}"
+lantern_binary="${LANTERN_BINARY:-lantern_cli}"
 
 devnet_flag=""
 if [ -n "$devnet" ]; then
@@ -40,8 +41,19 @@ if [ -z "$httpPort" ]; then
     httpPort="5055"
 fi
 
+shadow_cost_flags=""
+if [ -n "${LANTERN_SHADOW_XMSS_AGGREGATE_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-aggregate-signatures-rate ${LANTERN_SHADOW_XMSS_AGGREGATE_RATE}"
+fi
+if [ -n "${LANTERN_SHADOW_XMSS_VERIFY_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-verify-aggregated-signatures-rate ${LANTERN_SHADOW_XMSS_VERIFY_RATE}"
+fi
+if [ -n "${LANTERN_SHADOW_XMSS_MERGE_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-merge-rate ${LANTERN_SHADOW_XMSS_MERGE_RATE}"
+fi
+
 # Lantern's repo: https://github.com/Pier-Two/lantern
-node_binary="$scriptDir/lantern/build/lantern_cli \
+node_binary="/usr/bin/env OPENSSL_ia32cap=~0x4000000000000000:~0x00040000 $lantern_binary \
         --data-dir $dataDir/$item \
         --genesis-config $configDir/config.yaml \
         --validator-registry-path $configDir/validators.yaml \
@@ -59,7 +71,8 @@ node_binary="$scriptDir/lantern/build/lantern_cli \
         $attestation_committee_flag \
         $aggregator_flag \
         $aggregate_subnet_ids_flag \
-        $checkpoint_sync_flag"
+        $checkpoint_sync_flag \
+        $shadow_cost_flags"
 
 node_docker="$LANTERN_IMAGE --data-dir /data \
         --genesis-config /config/config.yaml \
@@ -78,7 +91,8 @@ node_docker="$LANTERN_IMAGE --data-dir /data \
         $attestation_committee_flag \
         $aggregator_flag \
         $aggregate_subnet_ids_flag \
-        $checkpoint_sync_flag"
+        $checkpoint_sync_flag \
+        $shadow_cost_flags"
 
 # choose either binary or docker
-node_setup="docker"
+node_setup="binary"

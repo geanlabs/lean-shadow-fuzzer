@@ -32,7 +32,7 @@ executable = "lantern_cli"                                                   # C
 # executable_path_in_image = "/usr/local/bin/lantern_cli"                     # Optional explicit executable path inside the source image.
 
 [client_images.gean]
-image = "ghcr.io/geanlabs/gean:shadow"                                       # Source Docker image used for gean when runner = "docker-arm".
+image = "ghcr.io/geanlabs/gean:devnet5"                                       # Source Docker image used for gean when runner = "docker-arm".
 executable = "gean"                                                          # Command to resolve via PATH inside image if executable_path_in_image is omitted.
 # executable_path_in_image = "/usr/local/bin/gean"                            # Optional explicit executable path inside the source image.
 

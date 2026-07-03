@@ -61,7 +61,7 @@ node_binary="$binary_path \
       $shadow_cost_flags"
 
 # Command when running as docker container
-node_docker="ghcr.io/geanlabs/gean:shadow \
+node_docker="ghcr.io/geanlabs/gean:devnet5 \
       --custom-network-config-dir /config \
       --gossipsub-port $quicPort \
       --node-id $item \
